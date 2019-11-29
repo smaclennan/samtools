@@ -1,0 +1,55 @@
+#!/bin/sh
+# Very simple dhcp only ifup for Ubuntu
+
+# User configurable
+#WPA_OPTS="-Dwext"
+#WPA_CONF="/etc/wpa_supplicant.conf"
+
+# systemd 'sends -a --read-environment' to initialize
+[ "$1" = "-a" ] && shift 2
+
+iface=${1:-eth0}
+
+ifup() {
+    /usr/bin/ipaddr -q $iface && { echo "$iface already up"; exit 1; }
+
+    case $iface in
+	wlan*)
+	    WPA_CONF=${WPA_CONF:-/etc/wpa_supplicant.conf}
+	    wpa_supplicant -B -i$iface -c$WPA_CONF ${WPA_OPTS:--Dwext} || exit 1
+	    ;;
+    esac
+
+    /sbin/sdhcp $iface
+}
+
+ifdown() {
+    local PID=$(pgrep -f "sdhcp $iface")
+    if [ -n "$PID" ]; then
+	kill $PID
+	sleep 2
+	pgrep -f "dhcpcd -h zonker $iface" && echo "not dead yet"
+    fi
+
+    if pgrep wpa_supplicant > /dev/null; then
+	pkill wpa_supplicant
+	sleep 2
+	pgrep wpa_supplicant > /dev/null || exit 0
+	pkill -9 wpa_supplicant
+    fi
+
+    ipaddr -D $iface
+}
+
+ifquery() {
+    echo "not yet $0 $*"
+}
+
+case "$0" in
+    *ifup) ifup;;
+    *ifdown) ifdown;;
+    *ifquery) ifquery;;
+    *) echo "Invalid command $0"; exit 1;;
+esac
+
+true # paranoia
