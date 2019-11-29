@@ -336,14 +336,13 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 	in->sin_len = sizeof(struct sockaddr_in);
 #endif
 	in->sin_family = AF_INET;
-	if (ip) {
+	if (ip)
 		in->sin_addr.s_addr = inet_addr(ip);
 
-		errno = 0;
-		if (ioctl(s, SIOCSIFADDR, &req)) {
-			perror("SIOCSIFADDR");
-			goto failed;
-		}
+	errno = 0;
+	if (ioctl(s, SIOCSIFADDR, &req)) {
+		perror("SIOCSIFADDR");
+		goto failed;
 	}
 
 	if (mask) {
