@@ -45,6 +45,7 @@
 #define W_SET      (1 <<  8)
 #define W_QUIET    (1 <<  9)
 #define W_MAC      (1 << 10)
+#define W_DOWN     (1 << 11)
 
 #if defined(__linux__)
 /* Returns the size of src */
@@ -317,7 +318,7 @@ failed:
 	return -1;
 }
 
-static int set_ip(const char *ifname, const char *ip, unsigned mask)
+static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 {
 	int s = socket(AF_INET, SOCK_DGRAM, 0);
 	if (s == -1) {
@@ -335,21 +336,28 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask)
 	in->sin_len = sizeof(struct sockaddr_in);
 #endif
 	in->sin_family = AF_INET;
-	in->sin_addr.s_addr = inet_addr(ip);
+	if (ip) {
+		in->sin_addr.s_addr = inet_addr(ip);
 
-	errno = 0;
-	if (ioctl(s, SIOCSIFADDR, &req)) {
-		perror("SIOCSIFADDR");
-		goto failed;
+		errno = 0;
+		if (ioctl(s, SIOCSIFADDR, &req)) {
+			perror("SIOCSIFADDR");
+			goto failed;
+		}
 	}
 
- 	in->sin_addr.s_addr = mask;
-	if (ioctl(s, SIOCSIFNETMASK, &req)) {
-		perror("SIOCSIFNETMASK");
-		goto failed;
+	if (mask) {
+		in->sin_addr.s_addr = mask;
+		if (ioctl(s, SIOCSIFNETMASK, &req)) {
+			perror("SIOCSIFNETMASK");
+			goto failed;
+		}
 	}
 
-	req.ifr_flags = IFF_UP | IFF_RUNNING;
+	if (down)
+		req.ifr_flags = 0;
+	else
+		req.ifr_flags = IFF_UP | IFF_RUNNING;
 	if (ioctl(s, SIOCSIFFLAGS, &req)) {
 		perror("SIOCSIFFLAGS");
 		goto failed;
@@ -477,6 +485,7 @@ static void usage(int rc)
 	fputs("usage: ipaddr [-abefgimsqM] [interface]\n"
 		  "       ipaddr -S <interface> <ip> <mask> [gateway]\n"
 		  "       ipaddr -S <interface> <ip>/<bits> [gateway]\n"
+		  "       ipaddr -D <interface>\n"
 		  "where: -e displays everything (-ibMf)\n"
 		  "       -i displays IP address (default)\n"
 		  "       -f display up and running flags\n"
@@ -500,7 +509,7 @@ int main(int argc, char *argv[])
 	int c, rc = 0;
 	unsigned what = 0;
 
-	while ((c = getopt(argc, argv, "abefgmishqSM")) != EOF)
+	while ((c = getopt(argc, argv, "abefgmishqDSM")) != EOF)
 		switch (c) {
 		case 'e':
 			what |= W_ADDRESS | W_BITS | W_FLAGS | W_MAC;
@@ -531,6 +540,9 @@ int main(int argc, char *argv[])
 		case 'q':
 			what |= W_QUIET;
 			break;
+		case 'D':
+			what |= W_DOWN;
+			break;
 		case 'S':
 			what |= W_SET;
 			break;
@@ -558,7 +570,7 @@ int main(int argc, char *argv[])
 		} else
 			usage(1);
 
-		if (set_ip(ifname, ip, mask))
+		if (set_ip(ifname, ip, mask, 0))
 			exit(1);
 		if (optind < argc) {
 			if (set_gateway(argv[optind])) {
@@ -566,6 +578,15 @@ int main(int argc, char *argv[])
 				exit(1);
 			}
 		}
+		return 0;
+	}
+
+	if (what & W_DOWN) {
+		if ((what & ~W_DOWN) || argc == optind)
+			usage(1);
+		char *ifname = argv[optind++];
+		if (set_ip(ifname, NULL, 0, 1))
+			exit(1);
 		return 0;
 	}
 
