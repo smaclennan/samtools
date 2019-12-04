@@ -6,19 +6,21 @@ WPA_OPTS="-Dwext"
 WPA_CONF="/etc/wpa_supplicant.conf"
 
 
+echo "$0 $*" >> /tmp/ifup.log # SAM DBG
+
 # systemd 'sends -a --read-environment' to initialize
 [ "$1" = "-a" ] && shift 2
 
 iface=${1:-eth0}
 
 ifup() {
-    /usr/bin/ipaddr -q $iface && { echo "$iface already up"; exit 1; }
+    ipaddr -q $iface && { echo "$iface already up"; exit 1; }
 
     case $iface in
 	wlan*) wpa_supplicant -B -i$iface -c$WPA_CONF $WPA_OPTS || exit 1;;
     esac
 
-    /sbin/sdhcp $iface
+    sdhcp $iface
 }
 
 ifdown() {

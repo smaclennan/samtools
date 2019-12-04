@@ -1,0 +1,110 @@
+.Dd December 3, 2019
+.Dt IPADDR 1
+.Os
+.Sh NAME
+.Nm ipaddr
+.Nd a script friendly ifconfig/ip replacement
+.Sh SYNOPSIS
+.Nm
+.Op Fl a
+.Op Fl b
+.Op Fl e
+.Op Fl f
+.Op Fl g
+.Op Fl i
+.Op Fl m
+.Op Fl s
+.Op Fl q
+.Op Fl M
+.Op Ar interface
+.Pf
+.Nm
+.Fl S
+interface ip mask
+.Op gateway
+.Pf
+.Nm
+.Fl S
+interface ip/bits
+.Op gateway
+.Pf
+.Nm
+.Fl D
+interface
+
+.Sh DESCRIPTION
+.Nm
+is a simple replacement for ifconfig or ip that is script
+friendly. The output format is very regular and easy to parse.
+
+If no options are given,
+.Nm
+displays the IP address of all the interfaces that are up.
+
+Note: The loopback device (lo) is never displayed unless specified by
+name.
+
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl a
+displays all interfaces, even downed interfaces
+.It Fl b
+add bits as /bits to
+.Fl i
+and/or
+.Fl s
+.It Fl e
+displays everything:
+.Fl ibMf
+.It Fl f
+display flags
+.It Fl g
+display gateway
+.It Fl i
+display IP address
+.It Fl m
+display network mask
+.It Fl s
+display subnet
+.It Fl q
+quiet, return error code only
+.It Fl M
+display hardware address (MAC)
+.It Fl S
+set the interface
+.It Fl D
+down the interface
+.El
+
+.Sh EXAMPLES
+
+%
+.Nm
+.sp 0
+192.168.1.99 (eth0)
+.sp 0
+192.168.1.100 (wlan0)
+
+Specifying an interface gives a tighter output:
+
+%
+.Nm
+eth0
+.sp 0
+192.168.1.99
+
+Argument order does not matter:
+
+%
+.Nm
+.Fl ibg
+eth0
+.sp 0
+192.168.1.99/24 192.168.1.1
+
+%
+.Nm
+.Fl gib
+eth0
+.sp 0
+192.168.1.99/24 192.168.1.1
