@@ -566,7 +566,7 @@ int main(int argc, char *argv[])
 		}
 
 	if (optind < argc)
-		ifname = argv[optind]++;
+		ifname = argv[optind++];
 
 	if (what & W_EXISTS) {
 		MUST_ARGS(W_EXISTS, 0);
