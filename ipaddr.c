@@ -506,10 +506,17 @@ static void usage(int rc)
 	exit(rc);
 }
 
+#define MUST_ARGS(m, n) do {								\
+		if ((what & ~(m)) || !ifname || argc - optind < n)	\
+			usage(1);										\
+	} while (0)
+
+
 int main(int argc, char *argv[])
 {
 	int c, rc = 0;
 	unsigned what = 0;
+	char *ifname = NULL;
 
 	while ((c = getopt(argc, argv, "abefgmishqCDSM")) != EOF)
 		switch (c) {
@@ -558,9 +565,11 @@ int main(int argc, char *argv[])
 			exit(2);
 		}
 
-	if (what & W_EXISTS) {
-		char *ifname = optind == argc ? "eth0" : argv[optind];
+	if (optind < argc)
+		ifname = argv[optind]++;
 
+	if (what & W_EXISTS) {
+		MUST_ARGS(W_EXISTS, 0);
 		struct ifaddrs *ifa;
 		if (getifaddrs(&ifa) == 0)
 			for (struct ifaddrs *p = ifa; p; p = p->ifa_next)
@@ -571,9 +580,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (what & W_SET) {
-		if ((what & ~W_SET) || argc - optind < 2)
-			usage(1);
-		char *ifname = argv[optind++];
+		MUST_ARGS(W_SET, 1);
 		char *ip = argv[optind++];
 		char *p = strchr(ip, '/');
 		unsigned mask = 0;
@@ -599,9 +606,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (what & W_DOWN) {
-		if ((what & ~W_DOWN) || argc == optind)
-			usage(1);
-		char *ifname = argv[optind++];
+		MUST_ARGS(W_SET, 0);
 		if (set_ip(ifname, NULL, 0, 1))
 			exit(1);
 		return 0;
@@ -622,25 +627,22 @@ int main(int argc, char *argv[])
 	if ((what & ~(W_BITS | W_ALL | W_QUIET)) == 0)
 		what |= W_ADDRESS;
 
-	if (optind < argc) {
-		while (optind < argc)
-			rc |= check_one(argv[optind++], 0, what);
-	} else {
-		struct ifaddrs *ifa;
+	if (ifname)
+		return check_one(ifname, 0, what);
 
-		if (getifaddrs(&ifa)) {
-			perror("getifaddrs");
-			exit(1);
-		}
+	struct ifaddrs *ifa;
+	if (getifaddrs(&ifa)) {
+		perror("getifaddrs");
+		exit(1);
+	}
 
-		for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
-			if (p->ifa_addr->sa_family != AF_INET || (p->ifa_flags & IFF_LOOPBACK))
-				continue;
+	for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
+		if (p->ifa_addr->sa_family != AF_INET || (p->ifa_flags & IFF_LOOPBACK))
+			continue;
 
-			unsigned up = p->ifa_flags & IFF_UP;
-			if ((what & W_ALL) || up)
-				rc |= check_one(p->ifa_name, up, what | W_GUESSED);
-		}
+		unsigned up = p->ifa_flags & IFF_UP;
+		if ((what & W_ALL) || up)
+			rc |= check_one(p->ifa_name, up, what | W_GUESSED);
 	}
 
 	return rc;
