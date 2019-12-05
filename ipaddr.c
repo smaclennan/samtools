@@ -46,6 +46,8 @@
 #define W_QUIET    (1 <<  9)
 #define W_MAC      (1 << 10)
 #define W_DOWN     (1 << 11)
+#define W_EXISTS   (1 << 12)
+
 
 #if defined(__linux__)
 /* Returns the size of src */
@@ -485,6 +487,7 @@ static void usage(int rc)
 		  "       ipaddr -S <interface> <ip> <mask> [gateway]\n"
 		  "       ipaddr -S <interface> <ip>/<bits> [gateway]\n"
 		  "       ipaddr -D <interface>\n"
+		  "       ipaddr -C <interface>\n"
 		  "where: -e displays everything (-ibMf)\n"
 		  "       -i displays IP address (default)\n"
 		  "       -f display up and running flags\n"
@@ -508,7 +511,7 @@ int main(int argc, char *argv[])
 	int c, rc = 0;
 	unsigned what = 0;
 
-	while ((c = getopt(argc, argv, "abefgmishqDSM")) != EOF)
+	while ((c = getopt(argc, argv, "abefgmishqCDSM")) != EOF)
 		switch (c) {
 		case 'e':
 			what |= W_ADDRESS | W_BITS | W_FLAGS | W_MAC;
@@ -539,6 +542,9 @@ int main(int argc, char *argv[])
 		case 'q':
 			what |= W_QUIET;
 			break;
+		case 'C':
+			what |= W_EXISTS;
+			break;
 		case 'D':
 			what |= W_DOWN;
 			break;
@@ -551,6 +557,18 @@ int main(int argc, char *argv[])
 		default:
 			exit(2);
 		}
+
+	if (what & W_EXISTS) {
+		char *ifname = optind == argc ? "eth0" : argv[optind];
+
+		struct ifaddrs *ifa;
+		if (getifaddrs(&ifa) == 0)
+			for (struct ifaddrs *p = ifa; p; p = p->ifa_next)
+				if (strcmp(p->ifa_name, ifname) == 0)
+					return 0;
+
+		exit(1);
+	}
 
 	if (what & W_SET) {
 		if ((what & ~W_SET) || argc - optind < 2)
