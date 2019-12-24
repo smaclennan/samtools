@@ -484,8 +484,8 @@ static int check_one(const char *ifname, int state, unsigned what)
 static void usage(int rc)
 {
 	fputs("usage: ipaddr [-abefgimsqM] [interface]\n"
-		  "       ipaddr -S <interface> <ip> <mask> [gateway]\n"
-		  "       ipaddr -S <interface> <ip>/<bits> [gateway]\n"
+		  "       ipaddr <interface> <ip> <mask> [gateway]\n"
+		  "       ipaddr <interface> <ip>/<bits> [gateway]\n"
 		  "       ipaddr -D <interface>\n"
 		  "       ipaddr -C <interface>\n"
 		  "where: -e displays everything (-ibMf)\n"
@@ -497,6 +497,8 @@ static void usage(int rc)
 		  "       -b add bits as /bits to -i and/or -s\n"
 		  "       -a displays all interfaces (even down)\n"
 		  "       -q quiet, return error code only\n"
+		  "       -D down interface\n"
+		  "       -C check interface exists\n"
 		  "       -M display hardware address (mac)\n"
 		  "\nInterface defaults to all interfaces.\n"
 		  "\n-q returns 0 if the interface (or gw) is up and has an IP address.\n"
@@ -567,6 +569,9 @@ int main(int argc, char *argv[])
 
 	if (optind < argc)
 		ifname = argv[optind++];
+
+	if (optind < argc)
+		what |= W_SET;
 
 	if (what & W_EXISTS) {
 		MUST_ARGS(W_EXISTS, 0);
