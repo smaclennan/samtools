@@ -25,6 +25,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <ifaddrs.h>
+#include <assert.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -131,47 +132,38 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 #else
 #include <net/route.h>
 #include <net/if_dl.h>
-#include <sys/poll.h>
 #include <sys/sysctl.h>
 
-#define RTM_ADDRS ((1 << RTAX_DST) | (1 << RTAX_NETMASK))
+#define RTM_ADDRS ((1 << RTAX_DST) | (1 << RTAX_GATEWAY) | (1 << RTAX_NETMASK))
 #define RTM_SEQ 42
 #define RTM_FLAGS (RTF_STATIC | RTF_UP | RTF_GATEWAY)
 #define	READ_TIMEOUT 10
 
 struct rtmsg {
 	struct rt_msghdr hdr;
-	unsigned char data[512];
+	struct sockaddr_in data[3];
 };
 
 static int rtmsg_send(int s, int cmd, const char *gw)
 {
-	struct rtmsg rtmsg;
+	struct rtmsg rtmsg = {
+		.hdr.rtm_type = cmd,
+		.hdr.rtm_flags = RTM_FLAGS,
+		.hdr.rtm_version = RTM_VERSION,
+		.hdr.rtm_seq = RTM_SEQ,
+		.hdr.rtm_addrs = RTM_ADDRS,
+		.hdr.rtm_msglen = sizeof(rtmsg),
+		.data = {
+			{ .sin_len = sizeof(struct sockaddr_in), .sin_family = AF_INET },
+			{ .sin_len = sizeof(struct sockaddr_in), .sin_family = AF_INET },
+			{ .sin_len = sizeof(struct sockaddr_in), .sin_family = AF_INET }
+		}
+	};
 
-	memset(&rtmsg, 0, sizeof(rtmsg));
-	rtmsg.hdr.rtm_type = cmd;
-	rtmsg.hdr.rtm_flags = RTM_FLAGS;
-	rtmsg.hdr.rtm_version = RTM_VERSION;
-	rtmsg.hdr.rtm_seq = RTM_SEQ;
-	rtmsg.hdr.rtm_addrs = RTM_ADDRS;
+	if (gw)
+		rtmsg.data[RTAX_GATEWAY].sin_addr.s_addr = inet_addr(gw);
 
-	struct sockaddr_in *sa = (struct sockaddr_in *)rtmsg.data;
-	sa->sin_len = sizeof(struct sockaddr_in); // DST
-	sa->sin_family = AF_INET;
-	++sa;
-	if (cmd != RTM_GET) {                     // GATEWAY
-		rtmsg.hdr.rtm_addrs |= 1 << RTAX_GATEWAY;
-		sa->sin_len = sizeof(struct sockaddr_in);
-		sa->sin_family = AF_INET;
-		sa->sin_addr.s_addr = inet_addr(gw);
-		++sa;
-	}
-	sa->sin_len = sizeof(struct sockaddr_in); // NETMASK
-	sa->sin_family = AF_INET;
-	++sa;
-
-	rtmsg.hdr.rtm_msglen = (uintptr_t)sa - (uintptr_t)&rtmsg;
-	if (write(s, &rtmsg, rtmsg.hdr.rtm_msglen) < 0)
+	if (write(s, &rtmsg, sizeof(rtmsg)) != sizeof(rtmsg))
 		return -1;
 
 	return 0;
@@ -180,12 +172,8 @@ static int rtmsg_send(int s, int cmd, const char *gw)
 static int rtmsg_recv(int s, struct in_addr *gateway)
 {
 	struct rtmsg rtmsg;
-	struct pollfd ufd = { .fd = s, .events = POLLIN };
 
 	do {
-		if (poll(&ufd, 1, READ_TIMEOUT * 1000) <= 0)
-			return -1;
-
 		if (read(s, (char *)&rtmsg, sizeof(rtmsg)) <= 0)
 			return -1;
 	} while (rtmsg.hdr.rtm_type != RTM_GET ||
@@ -199,17 +187,13 @@ static int rtmsg_recv(int s, struct in_addr *gateway)
 		return -1;
 	}
 
-	unsigned char *cp = rtmsg.data;
-	for (int i = 0; i < RTAX_MAX; i++)
-		if (rtmsg.hdr.rtm_addrs & (1 << i)) {
-			if (i == RTAX_GATEWAY) {
-				*gateway = ((struct sockaddr_in *)cp)->sin_addr;
-				return 0;
-			}
-			cp += ((struct sockaddr *)cp)->sa_len;
-		}
+	if ((rtmsg.hdr.rtm_addrs & (1 << RTAX_GATEWAY)) == 0) {
+		errno = ENOENT;
+		return 1; /* not found */
+	}
 
-	return 1; /* not found */
+	*gateway = rtmsg.data[RTAX_GATEWAY].sin_addr;
+	return 0;
 }
 
 /* ifname ignored */
@@ -218,6 +202,9 @@ static int get_gateway(const char *ifname, struct in_addr *gateway)
 	int s = socket(PF_ROUTE, SOCK_RAW, 0);
 	if (s < 0)
 		return -1;
+
+	struct timeval tv = { .tv_sec = READ_TIMEOUT };
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
 	if (rtmsg_send(s, RTM_GET, NULL)) {
 		close(s);
@@ -570,25 +557,11 @@ int main(int argc, char *argv[])
 	if (optind < argc)
 		ifname = argv[optind++];
 
-	if (optind < argc)
-		what |= W_SET;
-
-	if (what & W_EXISTS) {
-		MUST_ARGS(W_EXISTS, 0);
-		struct ifaddrs *ifa;
-		if (getifaddrs(&ifa) == 0)
-			for (struct ifaddrs *p = ifa; p; p = p->ifa_next)
-				if (strcmp(p->ifa_name, ifname) == 0)
-					return 0;
-
-		exit(1);
-	}
-
-	if (what & W_SET) {
+	if (optind < argc) {
 		MUST_ARGS(W_SET, 1);
 		char *ip = argv[optind++];
-		char *p = strchr(ip, '/');
 		unsigned mask = 0;
+		char *p = strchr(ip, '/');
 		if (p) {
 			*p++ = 0;
 			unsigned bits = strtol(p, NULL, 10);
@@ -608,6 +581,17 @@ int main(int argc, char *argv[])
 			}
 		}
 		return 0;
+	}
+
+	if (what & W_EXISTS) {
+		MUST_ARGS(W_EXISTS, 0);
+		struct ifaddrs *ifa;
+		if (getifaddrs(&ifa) == 0)
+			for (struct ifaddrs *p = ifa; p; p = p->ifa_next)
+				if (strcmp(p->ifa_name, ifname) == 0)
+					return 0;
+
+		exit(1);
 	}
 
 	if (what & W_DOWN) {
