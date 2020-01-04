@@ -315,20 +315,43 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 		return -1;
 	}
 
-	struct ifreq req;
-	memset(&req, 0, sizeof(req));
+	struct ifreq req = {
+#ifndef __linux__
+		.ifr_addr.sa_len = sizeof(struct sockaddr_in),
+#endif
+		.ifr_addr.sa_family = AF_INET,
+	};
 
 	strlcpy(req.ifr_name, ifname, IF_NAMESIZE);
 
+#ifdef SIOCAIFADDR
+	struct ifaliasreq areq = {
+		.ifra_addr.sa_len = sizeof(struct sockaddr_in),
+		.ifra_addr.sa_family = AF_INET,
+		.ifra_mask.sa_len = sizeof(struct sockaddr_in),
+		.ifra_mask.sa_family = AF_INET,
+	};
+
+	strlcpy(areq.ifra_name, ifname, IF_NAMESIZE);
+	if (ip) {
+		struct sockaddr_in *in = (struct sockaddr_in *)&areq.ifra_addr;
+		in->sin_addr.s_addr = inet_addr(ip);
+	}
+	if (mask) {
+		struct sockaddr_in *in = (struct sockaddr_in *)&areq.ifra_mask;
+		in->sin_addr.s_addr = mask;
+	}
+
+	if (ioctl(s, SIOCAIFADDR, &areq)) {
+		perror("SIOCSIFADDR");
+		goto failed;
+	}
+#else
 	struct sockaddr_in *in = (struct sockaddr_in *)&req.ifr_addr;
-#ifndef __linux__
-	in->sin_len = sizeof(struct sockaddr_in);
-#endif
-	in->sin_family = AF_INET;
+
 	if (ip)
 		in->sin_addr.s_addr = inet_addr(ip);
 
-	errno = 0;
 	if (ioctl(s, SIOCSIFADDR, &req)) {
 		perror("SIOCSIFADDR");
 		goto failed;
@@ -341,11 +364,9 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 			goto failed;
 		}
 	}
+#endif
 
-	if (down)
-		req.ifr_flags = 0;
-	else
-		req.ifr_flags = IFF_UP | IFF_RUNNING;
+	req.ifr_flags = down ? 0 : IFF_UP | IFF_RUNNING;
 	if (ioctl(s, SIOCSIFFLAGS, &req)) {
 		perror("SIOCSIFFLAGS");
 		goto failed;
