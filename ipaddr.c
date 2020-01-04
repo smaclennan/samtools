@@ -343,7 +343,7 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 	}
 
 	if (ioctl(s, SIOCAIFADDR, &areq)) {
-		perror("SIOCSIFADDR");
+		perror("SIOCAIFADDR");
 		goto failed;
 	}
 #else
