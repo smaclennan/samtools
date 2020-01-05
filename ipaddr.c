@@ -98,13 +98,12 @@ static int set_gateway(const char *gw)
 	if (fd == -1)
 		return -1;
 
-	struct rtentry rtreq;
-	memset(&rtreq, 0, sizeof(rtreq));
-	rtreq.rt_flags = (RTF_UP | RTF_GATEWAY);
-
-	rtreq.rt_gateway.sa_family = AF_INET;
-	rtreq.rt_genmask.sa_family = AF_INET;
-	rtreq.rt_dst.sa_family = AF_INET;
+	struct rtentry rtreq = {
+		.rt_flags = (RTF_UP | RTF_GATEWAY),
+		.rt_gateway.sa_family = AF_INET,
+		.rt_genmask.sa_family = AF_INET,
+		.rt_dst.sa_family = AF_INET,
+	};
 
 	struct sockaddr_in *sa = (struct sockaddr_in*)&rtreq.rt_gateway;
 	sa->sin_addr.s_addr = inet_addr(gw);
@@ -120,8 +119,7 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 	if (sock == -1)
 		return -1;
 
-	struct ifreq ifreq;
-	memset(&ifreq, 0, sizeof(ifreq));
+	struct ifreq ifreq = { 0 };
 	strlcpy(ifreq.ifr_name, ifname, IF_NAMESIZE);
 	int rc = ioctl(sock, SIOCGIFHWADDR, &ifreq);
 	close(sock);
@@ -285,7 +283,7 @@ static int ip_addr(const char *ifname, struct in_addr *addr, struct in_addr *mas
 	if (s < 0)
 		return -1;
 
-	struct ifreq ifr;
+	struct ifreq ifr = { 0 };
 	strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
 	if (ioctl(s, SIOCGIFADDR, &ifr) < 0)
