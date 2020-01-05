@@ -1,4 +1,4 @@
-.Dd December 3, 2019
+.Dd January 5, 2020
 .Dt IPADDR 1
 .Os
 .Sh NAME
@@ -6,26 +6,15 @@
 .Nd a script friendly ifconfig/ip replacement
 .Sh SYNOPSIS
 .Nm
-.Op Fl a
-.Op Fl b
-.Op Fl e
-.Op Fl f
-.Op Fl g
-.Op Fl i
-.Op Fl m
-.Op Fl s
-.Op Fl q
-.Op Fl M
+.Op Fl abefgimsqM
 .Op Ar interface
 .Pf
 .Nm
-.Fl S
-interface ip mask
+interface ip/bits
 .Op gateway
 .Pf
 .Nm
-.Fl S
-interface ip/bits
+interface ip mask
 .Op gateway
 .Pf
 .Nm
@@ -47,6 +36,9 @@ displays the IP address of all the interfaces that are up.
 
 Note: The loopback device (lo) is never displayed unless specified by
 name.
+
+This is not a complete replacement for ifconfig/ip, but should give
+you enough to bring an interface up and check the status. 
 
 .Sh OPTIONS
 .Bl -tag -width Ds
@@ -74,8 +66,6 @@ display subnet
 quiet, return error code only
 .It Fl M
 display hardware address (MAC)
-.It Fl S
-set the interface
 .It Fl D
 down the interface
 .It Fl C
@@ -121,3 +111,9 @@ eth0
 eth0
 .sp 0
 192.168.1.99/24 66:44:cc:6e:2e:0d <UP,RUNNING>
+
+Set the interface and default gateway:
+
+%
+.Nm
+eth0 192.168.1.99/24 192.168.1.1
