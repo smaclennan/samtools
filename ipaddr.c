@@ -28,10 +28,10 @@
 #include <assert.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <arpa/inet.h>
-#include <net/if.h>
 #include <net/route.h>
 #include <netdb.h>
 
@@ -415,7 +415,7 @@ static int check_one(const char *ifname, int state, unsigned what)
 		mac_str[sizeof(mac_str) - 1] = 0;
 
 		// We may want the mac before interface is up
-		if ((what & W_MAC) == W_MAC) {
+		if (what == W_MAC) {
 			puts(mac_str);
 			return 0;
 		}
