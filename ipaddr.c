@@ -406,14 +406,6 @@ static int check_one(const char *ifname, int state, unsigned what)
 	struct in_addr addr = { 0 }, mask = { 0 }, gw;
 	char mac_str[ETHER_ADDR_LEN * 3];
 
-	int rc = ip_addr(ifname, &addr, &mask);
-
-	if (rc == 0 && (what & W_GATEWAY))
-		rc = get_gateway(ifname, &gw);
-
-	if (what & W_QUIET)
-		return !!rc;
-
 	if (what & W_MAC) {
 		unsigned char mac[ETHER_ADDR_LEN];
 		if (get_hw_addr(ifname, mac))
@@ -421,7 +413,21 @@ static int check_one(const char *ifname, int state, unsigned what)
 		for (int i = 0; i < ETHER_ADDR_LEN; ++i)
 			sprintf(mac_str + (i * 3), "%02x:", mac[i]);
 		mac_str[sizeof(mac_str) - 1] = 0;
+
+		// We may want the mac before interface is up
+		if ((what & W_MAC) == W_MAC) {
+			puts(mac_str);
+			return 0;
+		}
 	}
+
+	int rc = ip_addr(ifname, &addr, &mask);
+
+	if (rc == 0 && (what & W_GATEWAY))
+		rc = get_gateway(ifname, &gw);
+
+	if (what & W_QUIET)
+		return !!rc;
 
 	if (rc) {
 		if (errno == EADDRNOTAVAIL) {
