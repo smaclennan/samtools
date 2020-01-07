@@ -1,4 +1,4 @@
-/* ipaddr.c - get various IP information
+/* ipaddr.c - simple script friendly ifconfig/ip replacement
  * Copyright (C) 2012-2019 Sean MacLennan
  *
  * This program is free software: you can redistribute it and/or modify
@@ -21,19 +21,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <ifaddrs.h>
-#include <assert.h>
 #include <sys/ioctl.h>
-#include <sys/socket.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <arpa/inet.h>
 #include <net/route.h>
-#include <netdb.h>
 
 #define W_ADDRESS  (1 <<  0)
 #define W_MASK     (1 <<  1)
@@ -128,9 +123,7 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 	return rc;
 }
 #else
-#include <net/route.h>
 #include <net/if_dl.h>
-#include <sys/sysctl.h>
 
 #define RTM_ADDRS ((1 << RTAX_DST) | (1 << RTAX_GATEWAY) | (1 << RTAX_NETMASK))
 #define RTM_SEQ 42
