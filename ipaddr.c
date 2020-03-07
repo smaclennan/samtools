@@ -298,6 +298,51 @@ failed:
 	return -1;
 }
 
+#ifndef __linux__
+static int media_up(int s, const char *ifname)
+{
+	struct ifmediareq ifmr = { 0 };
+	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
+	if (ioctl(s, SIOCGIFMEDIA, &ifmr)) {
+		perror("SIOCGIFMEDIA");
+		return 1;
+	}
+
+	if ((ifmr.ifm_active & 2) == 0)
+		return 0;
+
+	ifmr.ifm_active &= ~2; // 2 is deselect
+	if (ioctl(s, SIOCSIFMEDIA, &ifmr)) {
+		perror("SIOCSIFMEDIA");
+		return 1;
+	}
+
+	// On qnx takes about 3 seconds. Allow 10 seconds.
+	for (int i = 0; i < 1000; ++i) {
+		// Seems we need a complete reset every time
+		memset(&ifmr, 0, sizeof(ifmr));
+		strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
+		if (ioctl(s, SIOCGIFMEDIA, &ifmr)) {
+			perror("SIOCGIFMEDIA");
+			return 1;
+		}
+
+		if ((ifmr.ifm_active & 2) == 0)
+			return 0;
+		
+		usleep(10000);
+	}
+	
+	puts("media timeout");
+	return 1;
+}
+#else
+static int media_up(int s, const char *ifname)
+{
+	return 0;
+}
+#endif
+
 static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 {
 	int s = socket(AF_INET, SOCK_DGRAM, 0);
@@ -363,22 +408,8 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 		goto failed;
 	}
 
-#ifdef __QNX__
-	/* qnx has started disabling media for some reason */
-	struct ifmediareq ifmr = { 0 };
-	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
-	if (ioctl(s, SIOCGIFMEDIA, &ifmr)) {
-		perror("SIOCGIFMEDIA");
+	if (media_up(s, ifname))
 		goto failed;
-	}
-	if (ifmr.ifm_active & 2) {
-		ifmr.ifm_active &= ~2; // 2 is deselect
-		if (ioctl(s, SIOCSIFMEDIA, &ifmr)) {
-			perror("SIOCSIFMEDIA");
-			goto failed;
-		}
-	}
-#endif
 
 	close(s);
 	return 0;
