@@ -684,9 +684,3 @@ int main(int argc, char *argv[])
 
 	return rc;
 }
-
-/*
- * Local Variables:
- * compile-command: "gcc -O2 -Wall ipaddr.c -o ipaddr"
- * End:
- */
