@@ -363,6 +363,23 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 		goto failed;
 	}
 
+#ifdef __QNX__
+	/* qnx has started disabling media for some reason */
+	struct ifmediareq ifmr = { 0 };
+	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
+	if (ioctl(s, SIOCGIFMEDIA, &ifmr)) {
+		perror("SIOCGIFMEDIA");
+		goto failed;
+	}
+	if (ifmr.ifm_active & 2) {
+		ifmr.ifm_active &= ~2; // 2 is deselect
+		if (ioctl(s, SIOCSIFMEDIA, &ifmr)) {
+			perror("SIOCSIFMEDIA");
+			goto failed;
+		}
+	}
+#endif
+
 	close(s);
 	return 0;
 
@@ -383,13 +400,26 @@ static char *ip_flags(const char *ifname)
 	memset(&ifreq, 0, sizeof(ifreq));
 	strlcpy(ifreq.ifr_name, ifname, IF_NAMESIZE);
 	if (ioctl(sock, SIOCGIFFLAGS, &ifreq)) {
+		close(sock);
 		return "Failed";
 	}
 
-	strcpy(flagstr, (ifreq.ifr_flags & IFF_UP) ? "UP" : "DOWN");
+#ifdef __linux__
+	sprintf(flagstr, "0x%x ", ifreq.ifr_flags);
+#else
+	int n = sprintf(flagstr, "0x%x ", ifreq.ifr_flags);
+
+	struct ifmediareq ifmr = { 0 };
+	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
+	ioctl(sock, SIOCGIFMEDIA, &ifmr);
+	sprintf(flagstr + n, "0x%x ", ifmr.ifm_active);
+#endif
+
+	strcat(flagstr, (ifreq.ifr_flags & IFF_UP) ? "UP" : "DOWN");
 	if (ifreq.ifr_flags & IFF_RUNNING)
 		strcat(flagstr, ",RUNNING");
 
+	close(sock);
 	return flagstr;
 }
 
