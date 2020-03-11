@@ -360,7 +360,7 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 
 	strlcpy(req.ifr_name, ifname, IF_NAMESIZE);
 
-#ifdef SIOCAIFADDR
+#if defined(SIOCAIFADDR) && !defined(__QNX__)
 	struct ifaliasreq areq = {
 		.ifra_addr.sa_len = sizeof(struct sockaddr_in),
 		.ifra_addr.sa_family = AF_INET,
