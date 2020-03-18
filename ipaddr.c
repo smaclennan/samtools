@@ -705,7 +705,7 @@ int main(int argc, char *argv[])
 	}
 
 	for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
-		if (p->ifa_addr->sa_family != AF_INET || (p->ifa_flags & IFF_LOOPBACK))
+		if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET || (p->ifa_flags & IFF_LOOPBACK))
 			continue;
 
 		unsigned up = p->ifa_flags & IFF_UP;
