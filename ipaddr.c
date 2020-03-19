@@ -604,6 +604,9 @@ static void usage(int rc)
 		  "       -D down interface\n"
 		  "       -C check interface exists\n"
 		  "       -M display hardware address (mac)\n"
+#ifdef __linux__
+		  "       -T create a TAP/TUN interface. Linux only.\n"
+#endif
 		  "\nInterface defaults to all interfaces.\n"
 		  "\n-q returns 0 if the interface (or gw) is up and has an IP address.\n"
 		  "\nDesigned to be easily used in scripts. All error output to stderr.\n",
