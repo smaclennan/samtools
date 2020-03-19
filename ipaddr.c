@@ -22,6 +22,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
@@ -43,7 +44,7 @@
 #define W_MAC      (1 << 10)
 #define W_DOWN     (1 << 11)
 #define W_EXISTS   (1 << 12)
-
+#define W_TUNTAP   (1 << 13)
 
 #if defined(__linux__)
 /* Returns the size of src */
@@ -547,6 +548,40 @@ static int check_one(const char *ifname, int state, unsigned what)
 	return 0;
 }
 
+#ifdef __linux__
+// FreeBSD?
+#include <linux/if_tun.h>
+
+static int taptun(const char *dev)
+{
+	struct ifreq ifr = { 0 };
+	strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+	ifr.ifr_flags = strncmp(dev, "tap", 3) == 0 ? IFF_TAP : IFF_TUN;
+	ifr.ifr_flags |= IFF_NO_PI;
+
+	int fd = open("/dev/net/tun", O_RDWR);
+	if (fd < 0) {
+		perror("/dev/net/tun");
+		exit(1);
+	}
+
+	if (ioctl(fd, TUNSETIFF, (void *) &ifr)) {
+		perror("TUNSETIFF");
+		exit(1);
+	}
+
+	if (ioctl(fd, TUNSETPERSIST, 1)) {
+		perror("TUNSETPERSIST");
+		exit(1);
+    }
+
+	close(fd);
+
+	// up tunnel
+	return !!set_ip(dev, NULL, 0, 0);
+}
+#endif
+
 static void usage(int rc)
 {
 	fputs("usage: ipaddr [-abefgimsqM] [interface]\n"
@@ -554,6 +589,9 @@ static void usage(int rc)
 		  "       ipaddr <interface> <ip>/<bits> [gateway]\n"
 		  "       ipaddr -D <interface>\n"
 		  "       ipaddr -C <interface>\n"
+#ifdef __linux__
+		  "       ipaddr -T <interface>\n"
+#endif
 		  "where: -e displays everything (-ibMf)\n"
 		  "       -i displays IP address (default)\n"
 		  "       -f display up and running flags\n"
@@ -586,7 +624,7 @@ int main(int argc, char *argv[])
 	unsigned what = 0;
 	char *ifname = NULL;
 
-	while ((c = getopt(argc, argv, "abefgmishqCDSM")) != EOF)
+	while ((c = getopt(argc, argv, "abefgmishqCDSTM")) != EOF)
 		switch (c) {
 		case 'e':
 			what |= W_ADDRESS | W_BITS | W_FLAGS | W_MAC;
@@ -625,6 +663,14 @@ int main(int argc, char *argv[])
 			break;
 		case 'S':
 			what |= W_SET;
+			break;
+		case 'T':
+#ifdef __linux__
+			what |= W_TUNTAP;
+#else
+			puts("Sorry, -T is Linux only.");
+			exit(2);
+#endif
 			break;
 		case 'M':
 			what |= W_MAC;
@@ -680,7 +726,12 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-#ifndef __linux__
+#ifdef __linux__
+	if (what & W_TUNTAP) {
+		MUST_ARGS(W_TUNTAP, 0);
+		return taptun(ifname);
+	}
+#else
 	if (what == W_GATEWAY) {
 		struct in_addr gw;
 		if (get_gateway(NULL, &gw)) {
