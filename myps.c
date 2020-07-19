@@ -63,8 +63,12 @@ static unsigned long long readstarttime(pid_t pid)
 	if (n <= 0)
 		return 0;
 
-	char *p = buf;
-	for (int i = 0; i < 21; ++i) {
+	// Sighhh... firefox creates a (Web Content) entry
+	char *p = strchr(buf, ')');
+	if (!p)
+		return 0;
+
+	for (int i = 0; i < 20; ++i) {
 		p = strchr(p, ' ');
 		if (!p)
 			return 0;
