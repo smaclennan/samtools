@@ -47,21 +47,13 @@
 #define W_TUNTAP   (1 << 13)
 
 #if defined(__linux__)
-/* Returns the size of src */
-size_t strlcpy(char *dst, const char *src, size_t dstlen)
+/* Currently only used to copy ifnames */
+static void strlcpy(char *dst, const char *src, int dstlen)
 {
-	int srclen = strlen(src);
-
-	if (dstlen > 0) {
-		if (dstlen > srclen)
-			strcpy(dst, src);
-		else {
-			strncpy(dst, src, dstlen - 1);
-			dst[dstlen - 1] = 0;
-		}
-	}
-
-	return srclen;
+	--dstlen; // leave room for null
+	for (int i = 0; *src && i < dstlen; ++i)
+		*dst++ = *src++;
+	*dst = 0;
 }
 
 /* Returns 0 on success, < 0 for errors, and > 0 if ifname not found.
@@ -403,7 +395,7 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 	}
 #endif
 
-	req.ifr_flags = down ? 0 : IFF_UP | IFF_RUNNING;
+	req.ifr_flags = down ? 0 : IFF_UP;
 	if (ioctl(s, SIOCSIFFLAGS, &req)) {
 		perror("SIOCSIFFLAGS");
 		goto failed;
@@ -723,7 +715,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (what & W_DOWN) {
-		MUST_ARGS(W_SET, 0);
+		MUST_ARGS(W_DOWN, 0);
 		if (set_ip(ifname, NULL, 0, 1))
 			exit(1);
 		return 0;
