@@ -1,5 +1,5 @@
 /* ipaddr.c - simple script friendly ifconfig/ip replacement
- * Copyright (C) 2012-2019 Sean MacLennan
+ * Copyright (C) 2004-2021 Sean MacLennan
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
