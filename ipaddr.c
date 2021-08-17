@@ -23,9 +23,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <ifaddrs.h>
 #include <sys/ioctl.h>
-#include <net/if.h>
+#include <net/if.h> // Must be before ifaddrs.h
+#include <ifaddrs.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <arpa/inet.h>
@@ -228,8 +228,10 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 	struct ifaddrs *ifa = NULL;
 	struct sockaddr_dl *sa = NULL;
 
-	if (getifaddrs(&ifa))
+	if (getifaddrs(&ifa)) {
+		perror("getifaddrs");
 		return -1;
+	}
 
 	for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
 		if (p->ifa_addr->sa_family == AF_LINK &&
@@ -306,6 +308,9 @@ static int media_up(int s, const char *ifname)
 
 	ifmr.ifm_active &= ~2; // 2 is deselect
 	if (ioctl(s, SIOCSIFMEDIA, &ifmr)) {
+		if (errno == EOPNOTSUPP)
+			// Some drivers, like vtnet, do not support the set
+			return 0;
 		perror("SIOCSIFMEDIA");
 		return 1;
 	}
