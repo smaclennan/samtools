@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <err.h>
 #include <sys/ioctl.h>
 #include <net/if.h> // Must be before ifaddrs.h
 #include <ifaddrs.h>
@@ -45,6 +46,14 @@
 #define W_DOWN     (1 << 11)
 #define W_EXISTS   (1 << 12)
 #define W_TUNTAP   (1 << 13)
+
+#ifdef __QNX__
+#include <sys/nto_version.h>
+#if _NTO_VERSION < 720
+// SIOCAIFADDR does not seem to work for io_pkt
+#undef SIOCAIFADDR
+#endif
+#endif
 
 #if defined(__linux__)
 /* Currently only used to copy ifnames */
@@ -251,6 +260,78 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 }
 #endif
 
+#ifdef SIOCSIFLLADDR
+// Some BSD, QNX
+#define HWADDR_IOCTL SIOCSIFLLADDR
+#define HWADDR_FAMILY AF_LINK
+#elif defined(SIOCSIFHWADDR)
+// Linux
+#define HWADDR_IOCTL SIOCSIFHWADDR
+#define HWADDR_FAMILY ARPHRD_ETHER
+#endif
+
+#ifdef HWADDR_IOCTL
+// Errors are fatal
+static void mac_to_binary(const char *text, uint8_t *macaddr)
+{
+	int mac_i = 0;
+	int state = 0;
+
+	for (const char *mac = text; *mac; ++mac) {
+		uint8_t nibble;
+		if (*mac >= '0' && *mac <= '9')
+			nibble = *mac - '0';
+		else if (*mac >= 'a' && *mac <= 'f')
+			nibble = *mac - 'a' + 10;
+		else if (*mac >= 'A' && *mac <= 'F')
+			nibble = *mac - 'A' + 10;
+		else if (*mac == ':') // colons are optional
+			continue;
+		else
+			errx(1, "Invalid char %c", *mac);
+
+		macaddr[mac_i] = (macaddr[mac_i] << 4) | nibble;
+		if (state == 1)
+			++mac_i;
+		state ^= 1;
+	}
+
+	if (mac_i != 6)
+		errx(1, "Invalid mac length");
+}
+
+// Errors are fatal
+static void set_hw_addr(const char *name, const char *mac)
+{
+	uint8_t macaddr[ETHER_ADDR_LEN] = { 0 };
+	mac_to_binary(mac, macaddr);
+
+	struct ifreq ifr = {
+		.ifr_addr.sa_family = HWADDR_FAMILY,
+#ifndef __linux__
+		.ifr_addr.sa_len = ETHER_ADDR_LEN,
+#endif
+	};
+
+	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
+	memcpy(ifr.ifr_addr.sa_data, macaddr, 6);
+
+	int s = socket(AF_LOCAL, SOCK_DGRAM, 0);
+	if (s < 0)
+		err(1, "socket");
+
+	if (ioctl(s, HWADDR_IOCTL, &ifr))
+		err(1, "ioctl");
+
+	close(s);
+}
+#else
+static void set_hw_addr(const char *name, const char *mac)
+{
+	errx(1, "Not supported");
+}
+#endif
+
 /* This is so fast, it is not worth optimizing. */
 static int maskcnt(unsigned mask)
 {
@@ -293,54 +374,6 @@ failed:
 	return -1;
 }
 
-#ifndef __linux__
-static int media_up(int s, const char *ifname)
-{
-	struct ifmediareq ifmr = { 0 };
-	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
-	if (ioctl(s, SIOCGIFMEDIA, &ifmr)) {
-		perror("SIOCGIFMEDIA");
-		return 1;
-	}
-
-	if ((ifmr.ifm_active & 2) == 0)
-		return 0;
-
-	ifmr.ifm_active &= ~2; // 2 is deselect
-	if (ioctl(s, SIOCSIFMEDIA, &ifmr)) {
-		if (errno == EOPNOTSUPP)
-			// Some drivers, like vtnet, do not support the set
-			return 0;
-		perror("SIOCSIFMEDIA");
-		return 1;
-	}
-
-	// On qnx takes about 3 seconds. Allow 10 seconds.
-	for (int i = 0; i < 1000; ++i) {
-		// Seems we need a complete reset every time
-		memset(&ifmr, 0, sizeof(ifmr));
-		strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
-		if (ioctl(s, SIOCGIFMEDIA, &ifmr)) {
-			perror("SIOCGIFMEDIA");
-			return 1;
-		}
-
-		if ((ifmr.ifm_active & 2) == 0)
-			return 0;
-		
-		usleep(10000);
-	}
-	
-	puts("media timeout");
-	return 1;
-}
-#else
-static int media_up(int s, const char *ifname)
-{
-	return 0;
-}
-#endif
-
 static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 {
 	int s = socket(AF_INET, SOCK_DGRAM, 0);
@@ -358,7 +391,7 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 
 	strlcpy(req.ifr_name, ifname, IF_NAMESIZE);
 
-#if defined(SIOCAIFADDR) && !defined(__QNX__)
+#if defined(SIOCAIFADDR)
 	struct ifaliasreq areq = {
 		.ifra_addr.sa_len = sizeof(struct sockaddr_in),
 		.ifra_addr.sa_family = AF_INET,
@@ -405,9 +438,6 @@ static int set_ip(const char *ifname, const char *ip, unsigned mask, int down)
 		perror("SIOCSIFFLAGS");
 		goto failed;
 	}
-
-	if (media_up(s, ifname))
-		goto failed;
 
 	close(s);
 	return 0;
@@ -586,6 +616,7 @@ static void usage(int rc)
 		  "       ipaddr <interface> <ip>/<bits> [gateway]\n"
 		  "       ipaddr -D <interface>\n"
 		  "       ipaddr -C <interface>\n"
+		  "       ipaddr -M <interface> [mac]\n"
 #ifdef __linux__
 		  "       ipaddr -T <interface>\n"
 #endif
@@ -600,7 +631,7 @@ static void usage(int rc)
 		  "       -q quiet, return error code only\n"
 		  "       -D down interface\n"
 		  "       -C check interface exists\n"
-		  "       -M display hardware address (mac)\n"
+		  "       -M display, or optionally set, hardware address (mac)\n"
 #ifdef __linux__
 		  "       -T create a TAP/TUN interface. Linux only.\n"
 #endif
@@ -683,8 +714,14 @@ int main(int argc, char *argv[])
 		ifname = argv[optind++];
 
 	if (optind < argc) {
-		MUST_ARGS(W_SET, 1);
+		MUST_ARGS(W_SET | W_MAC, 1);
 		char *ip = argv[optind++];
+
+		if (what & W_MAC) {
+			set_hw_addr(ifname, ip);
+			return 0;
+		}
+
 		unsigned mask = 0;
 		char *p = strchr(ip, '/');
 		if (p) {
