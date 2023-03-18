@@ -126,6 +126,7 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 }
 #else
 #include <net/if_dl.h>
+#include <net/if_media.h>
 
 #define RTM_ADDRS ((1 << RTAX_DST) | (1 << RTAX_GATEWAY) | (1 << RTAX_NETMASK))
 #define RTM_SEQ 42
@@ -471,7 +472,10 @@ static char *ip_flags(const char *ifname)
 	struct ifmediareq ifmr = { 0 };
 	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
 	ioctl(sock, SIOCGIFMEDIA, &ifmr);
-	sprintf(flagstr + n, "0x%x ", ifmr.ifm_active);
+#define ACTIVE (IFM_AVALID | IFM_ACTIVE)
+#define IS_ACTIVE(s) ((s & ACTIVE) == ACTIVE)
+	sprintf(flagstr + n, "%s ",
+			IS_ACTIVE(ifmr.ifm_status) ? "active" : "no carrier");
 #endif
 
 	strcat(flagstr, (ifreq.ifr_flags & IFF_UP) ? "UP" : "DOWN");
