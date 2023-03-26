@@ -448,6 +448,44 @@ failed:
 	return -1;
 }
 
+#ifdef __linux__
+static int
+link_status(int sock, const char *ifname, short flags)
+{
+	// If the interface is not up, we cannot get the link status
+	if ((flags & IFF_UP) == 0)
+		return -1;
+
+	char buf[40];
+	snprintf(buf, sizeof(buf), "/sys/class/net/%s/carrier", ifname);
+	int fd = open(buf, O_RDONLY);
+	if (fd == -1)
+		return -1;
+
+	int n = read(fd, buf, sizeof(buf));
+	close(fd);
+
+	if (n < 1)
+		return -1;
+
+	return *buf == '1';
+}
+#else
+// Both bits must be set
+#define ACTIVE (IFM_AVALID | IFM_ACTIVE)
+
+static int
+link_status(int sock, const char *ifname, short flags)
+{
+	struct ifmediareq ifmr = { 0 };
+	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
+	if (ioctl(sock, SIOCGIFMEDIA, &ifmr))
+		return -1;
+
+	return (ifmr.ifm_status & ACTIVE) == ACTIVE;
+}
+#endif
+
 static char *ip_flags(const char *ifname)
 {
 	static char flagstr[64];
@@ -464,25 +502,16 @@ static char *ip_flags(const char *ifname)
 		return "Failed";
 	}
 
-#ifdef __linux__
-	sprintf(flagstr, "0x%x ", ifreq.ifr_flags);
-#else
-	int n = sprintf(flagstr, "0x%x ", ifreq.ifr_flags);
-
-	struct ifmediareq ifmr = { 0 };
-	strlcpy(ifmr.ifm_name, ifname, sizeof(ifmr.ifm_name));
-	ioctl(sock, SIOCGIFMEDIA, &ifmr);
-#define ACTIVE (IFM_AVALID | IFM_ACTIVE)
-#define IS_ACTIVE(s) ((s & ACTIVE) == ACTIVE)
-	sprintf(flagstr + n, "%s ",
-			IS_ACTIVE(ifmr.ifm_status) ? "active" : "no carrier");
-#endif
-
-	strcat(flagstr, (ifreq.ifr_flags & IFF_UP) ? "UP" : "DOWN");
-	if (ifreq.ifr_flags & IFF_RUNNING)
-		strcat(flagstr, ",RUNNING");
+	int link_stat = link_status(sock, ifname, ifreq.ifr_flags);
 
 	close(sock);
+
+	sprintf(flagstr, "0x%04hx %s%s %s", ifreq.ifr_flags,
+			(ifreq.ifr_flags & IFF_UP) ? "UP" : "DOWN",
+			(ifreq.ifr_flags & IFF_RUNNING) ? ",RUNNING" : "",
+			link_stat == -1 ? "unknown" :
+			link_stat == 1 ? "active" : "no carrier");
+
 	return flagstr;
 }
 
@@ -626,7 +655,7 @@ static void usage(int rc)
 #endif
 		  "where: -e displays everything (-ibMf)\n"
 		  "       -i displays IP address (default)\n"
-		  "       -f display up and running flags\n"
+		  "       -f displays up and running flags and link status\n"
 		  "       -g displays gateway\n"
 		  "       -m displays network mask\n"
 		  "       -s displays subnet\n"
