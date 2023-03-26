@@ -515,7 +515,7 @@ static char *ip_flags(const char *ifname)
 	return flagstr;
 }
 
-static int check_one(const char *ifname, int state, unsigned what)
+static int check_one(const char *ifname, struct sockaddr *in, int state, unsigned what)
 {
 	int n = 0;
 	struct in_addr addr = { 0 }, mask = { 0 }, gw;
@@ -536,7 +536,11 @@ static int check_one(const char *ifname, int state, unsigned what)
 		}
 	}
 
-	int rc = ip_addr(ifname, &addr, &mask);
+	int rc = 0;
+	if (in)
+		addr = ((struct sockaddr_in *)in)->sin_addr;
+	else
+		rc = ip_addr(ifname, &addr, &mask);
 
 	if (rc == 0 && (what & W_GATEWAY))
 		rc = get_gateway(ifname, &gw);
@@ -817,7 +821,7 @@ int main(int argc, char *argv[])
 		what |= W_ADDRESS;
 
 	if (ifname)
-		return check_one(ifname, 0, what);
+		return check_one(ifname, NULL, 0, what);
 
 	struct ifaddrs *ifa;
 	if (getifaddrs(&ifa)) {
@@ -831,7 +835,7 @@ int main(int argc, char *argv[])
 
 		unsigned up = p->ifa_flags & IFF_UP;
 		if ((what & W_ALL) || up)
-			rc |= check_one(p->ifa_name, up, what | W_GUESSED);
+			rc |= check_one(p->ifa_name, p->ifa_addr, up, what | W_GUESSED);
 	}
 
 	return rc;
