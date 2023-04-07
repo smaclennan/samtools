@@ -619,7 +619,7 @@ static int check_one(const char *ifname, struct sockaddr *in, int state, unsigne
 static int taptun(const char *dev)
 {
 	struct ifreq ifr = { 0 };
-	strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+	strlcpy(ifr.ifr_name, dev, IFNAMSIZ);
 	ifr.ifr_flags = strncmp(dev, "tap", 3) == 0 ? IFF_TAP : IFF_TUN;
 	ifr.ifr_flags |= IFF_NO_PI;
 
