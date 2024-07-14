@@ -46,7 +46,6 @@
 #define W_DOWN     (1 << 11)
 #define W_EXISTS   (1 << 12)
 #define W_TUNTAP   (1 << 13)
-#define W_TOP_BYTE (1 << 14)
 #define W_NO_VIRT  (1 << 15)
 
 #define VIRBR "virbr"
@@ -601,14 +600,6 @@ static int check_one(const char *ifname, struct ifaddrs *in, int state, unsigned
 			putchar(' ');
 		printf("<%s>", ip_flags(ifname));
 	}
-	if (what & W_TOP_BYTE) {
-		char ipstr[16];
-		strcpy(ipstr, inet_ntoa(addr));
-		char *p = strchr(ipstr, '.');
-		if (p) *p = 0;
-		printf("%s", ipstr);
-		n += strlen(ipstr);
-	}
 
 	if (what & W_GATEWAY) {
 		if (n++)
@@ -676,7 +667,6 @@ static void usage(int rc)
 		  "       -g displays gateway\n"
 		  "       -m displays network mask\n"
 		  "       -s displays subnet\n"
-		  "       -t top byte of IP address\n"
 		  "       -b add bits as /bits to -i and/or -s\n"
 		  "       -a displays all interfaces (even down)\n"
 		  "       -q quiet, return error code only\n"
@@ -707,7 +697,7 @@ int main(int argc, char *argv[])
 	unsigned what = 0;
 	char *ifname = NULL;
 
-	while ((c = getopt(argc, argv, "abefgmisthqCDSTMV")) != EOF)
+	while ((c = getopt(argc, argv, "abefgmishqCDSTMV")) != EOF)
 		switch (c) {
 		case 'e':
 			what |= W_ADDRESS | W_BITS | W_FLAGS | W_MAC;
@@ -729,9 +719,6 @@ int main(int argc, char *argv[])
 			break;
 		case 's':
 			what |= W_SUBNET;
-			break;
-		case 't':
-			what |= W_TOP_BYTE;
 			break;
 		case 'a':
 			what |= W_ALL;
