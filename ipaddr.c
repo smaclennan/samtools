@@ -47,6 +47,9 @@
 #define W_EXISTS   (1 << 12)
 #define W_TUNTAP   (1 << 13)
 #define W_TOP_BYTE (1 << 14)
+#define W_NO_VIRT  (1 << 15)
+
+#define VIRBR "virbr"
 
 #ifdef __QNX__
 #include <sys/nto_version.h>
@@ -682,6 +685,7 @@ static void usage(int rc)
 #ifdef __linux__
 		  "       -T create a TAP/TUN interface. Linux only.\n"
 #endif
+		  "       -V no virtual network\n"
 		  "\nInterface defaults to all interfaces.\n"
 		  "\n-q returns 0 if the interface (or gw) is up and has an IP address.\n"
 		  "\nDesigned to be easily used in scripts. All error output to stderr.\n",
@@ -702,7 +706,7 @@ int main(int argc, char *argv[])
 	unsigned what = 0;
 	char *ifname = NULL;
 
-	while ((c = getopt(argc, argv, "abefgmisthqCDSTM")) != EOF)
+	while ((c = getopt(argc, argv, "abefgmisthqCDSTMV")) != EOF)
 		switch (c) {
 		case 'e':
 			what |= W_ADDRESS | W_BITS | W_FLAGS | W_MAC;
@@ -755,6 +759,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'M':
 			what |= W_MAC;
+			break;
+		case 'V':
+			what |= W_NO_VIRT;
 			break;
 		default:
 			exit(2);
@@ -830,7 +837,7 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-	if ((what & ~(W_BITS | W_ALL | W_QUIET)) == 0)
+	if ((what & ~(W_BITS | W_ALL | W_QUIET | W_NO_VIRT)) == 0)
 		what |= W_ADDRESS;
 
 	if (ifname)
@@ -847,8 +854,10 @@ int main(int argc, char *argv[])
 			continue;
 
 		unsigned up = p->ifa_flags & IFF_UP;
-		if ((what & W_ALL) || up)
-			rc |= check_one(p->ifa_name, p->ifa_addr, up, what | W_GUESSED);
+		if ((what & W_ALL) || up) {
+			if ((what & W_NO_VIRT) == 0 || strncmp(p->ifa_name, VIRBR, sizeof(VIRBR) - 1) != 0)
+				rc |= check_one(p->ifa_name, p->ifa_addr, up, what | W_GUESSED);
+		}
 	}
 
 	return rc;
