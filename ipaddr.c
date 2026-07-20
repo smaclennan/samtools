@@ -522,10 +522,10 @@ static int check_one(const char *ifname, struct ifaddrs *in, int state, unsigned
 {
 	int n = 0;
 	struct in_addr addr = { 0 }, mask = { 0 }, gw;
-	char mac_str[ETHER_ADDR_LEN * 3];
+	char mac_str[ETHER_ADDR_LEN * 3 + 1];
 
 	if (what & W_MAC) {
-		unsigned char mac[ETHER_ADDR_LEN];
+		unsigned char mac[ETHER_ADDR_LEN + 1];
 		if (get_hw_addr(ifname, mac))
 			return 1;
 		for (int i = 0; i < ETHER_ADDR_LEN; ++i)
