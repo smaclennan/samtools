@@ -17,6 +17,7 @@
  * Boston, MA 02111-1307, USA.
  */
 
+#undef __USE_MISC
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -755,7 +756,7 @@ static void usage(int rc)
 		  "       -V no virtual network\n"
 		  "\nInterface defaults to all interfaces.\n"
 		  "\n-q returns 0 if the interface (or gw) is up and has an IP address.\n"
-		  "\nDesigned to be easily used in scripts. All error output to stderr."
+		  "\nDesigned to be easily used in scripts. All error output to stderr.\n"
 		  , stderr);
 	exit(rc);
 }
@@ -840,7 +841,7 @@ int main(int argc, char *argv[])
 		ifname = argv[optind++];
 
 	if (optind < argc) {
-		MUST_ARGS(W_SET | W_MAC, 1);
+		MUST_ARGS(W_SET | W_MAC | W_IFCAP, 1);
 
 #ifndef __linux__
 		if (strcmp(argv[optind], "create") == 0) {
