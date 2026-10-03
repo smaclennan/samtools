@@ -262,6 +262,36 @@ static int get_hw_addr(const char *ifname, unsigned char *hwaddr)
 	errno = ENOENT;
 	return -1;
 }
+
+static void ifcreate(char *ifname)
+{
+	int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock_fd < 0)
+		err(1, "Failed to open socket");
+
+	struct ifreq ifr = { 0 };
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+
+	if (ioctl(sock_fd, SIOCIFCREATE, &ifr) < 0)
+		err(1, "SIOCIFCREATE");
+
+	close(sock_fd);
+}
+
+static void ifdestroy(char *ifname)
+{
+	int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock_fd < 0)
+		err(1, "Failed to open socket");
+
+	struct ifreq ifr = { 0 };
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+
+	if (ioctl(sock_fd, SIOCIFDESTROY, &ifr) < 0)
+		err(1, "SIOCIFCREATE");
+
+	close(sock_fd);
+}
 #endif
 
 #ifdef SIOCSIFLLADDR
@@ -628,20 +658,14 @@ static int taptun(const char *dev)
 	ifr.ifr_flags |= IFF_NO_PI;
 
 	int fd = open("/dev/net/tun", O_RDWR);
-	if (fd < 0) {
-		perror("/dev/net/tun");
-		exit(1);
-	}
+	if (fd < 0)
+		err(1, "/dev/net/tun");
 
-	if (ioctl(fd, TUNSETIFF, (void *) &ifr)) {
-		perror("TUNSETIFF");
-		exit(1);
-	}
+	if (ioctl(fd, TUNSETIFF, (void *) &ifr))
+		err(1, "TUNSETIFF");
 
-	if (ioctl(fd, TUNSETPERSIST, 1)) {
-		perror("TUNSETPERSIST");
-		exit(1);
-    }
+	if (ioctl(fd, TUNSETPERSIST, 1))
+		err(1, "TUNSETPERSIST");
 
 	close(fd);
 
@@ -653,8 +677,14 @@ static int taptun(const char *dev)
 static void usage(int rc)
 {
 	fputs("usage: ipaddr [-abefgimsqM] [interface]\n"
+#ifdef __linux__
 		  "       ipaddr <interface> <ip> <mask> [gateway]\n"
 		  "       ipaddr <interface> <ip>/<bits> [gateway]\n"
+#else
+		  "       ipaddr <interface> [create] <ip> <mask> [gateway]\n"
+		  "       ipaddr <interface> [create] <ip>/<bits> [gateway]\n"
+		  "       ipaddr <interface> destroy\n"
+#endif
 		  "       ipaddr -D <interface>\n"
 		  "       ipaddr -C <interface>\n"
 		  "       ipaddr -M <interface> [mac]\n"
@@ -679,9 +709,8 @@ static void usage(int rc)
 		  "       -V no virtual network\n"
 		  "\nInterface defaults to all interfaces.\n"
 		  "\n-q returns 0 if the interface (or gw) is up and has an IP address.\n"
-		  "\nDesigned to be easily used in scripts. All error output to stderr.\n",
-		  stderr);
-
+		  "\nDesigned to be easily used in scripts. All error output to stderr."
+		  , stderr);
 	exit(rc);
 }
 
@@ -760,6 +789,19 @@ int main(int argc, char *argv[])
 
 	if (optind < argc) {
 		MUST_ARGS(W_SET | W_MAC, 1);
+
+#ifndef __linux__
+		if (strcmp(argv[optind], "create") == 0) {
+			ifcreate(ifname);
+			optind++;
+		}
+
+		if (strcmp(argv[optind], "destroy") == 0) {
+			ifdestroy(ifname);
+			return 0;
+		}
+#endif
+
 		char *ip = argv[optind++];
 
 		if (what & W_MAC) {
