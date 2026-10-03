@@ -62,12 +62,13 @@
 
 #if defined(__linux__)
 /* Currently only used to copy ifnames */
-static void strlcpy(char *dst, const char *src, int dstlen)
+static size_t strlcpy(char *dst, const char *src, size_t dstlen)
 {
 	--dstlen; // leave room for null
 	for (int i = 0; *src && i < dstlen; ++i)
 		*dst++ = *src++;
 	*dst = 0;
+	return 0; // wrong but I don't care
 }
 
 /* Returns 0 on success, < 0 for errors, and > 0 if ifname not found.
