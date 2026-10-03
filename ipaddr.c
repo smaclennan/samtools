@@ -762,11 +762,61 @@ static void usage(int rc)
 	exit(rc);
 }
 
-#define MUST_ARGS(m, n) do {								\
-		if ((what & ~(m)) || !ifname || argc - optind < n)	\
-			usage(1);										\
-	} while (0)
+#define MUST_ARGS(m, n) do {									\
+			if ((what & ~(m)) || !ifname || argc - optind < n)	\
+				usage(1);										\
+		} while (0)
 
+static int configure_interface(char *ifname, int argc, char *argv[], int what, int ifcap)
+{
+#ifndef __linux__
+	if (strcmp(argv[optind], "create") == 0) {
+		ifcreate(ifname);
+		optind++;
+	}
+
+	if (strcmp(argv[optind], "destroy") == 0) {
+		ifdestroy(ifname);
+		return 0;
+	}
+#endif
+
+	MUST_ARGS(W_SET | W_MAC | W_IFCAP, 1);
+
+#ifndef __linux__
+	if (what & W_IFCAP)
+		set_ifcap(ifname, ifcap);
+#endif
+
+	char *ip = argv[optind++];
+
+	if (what & W_MAC) {
+		set_hw_addr(ifname, ip);
+		return 0;
+	}
+
+	unsigned mask = 0;
+	char *p = strchr(ip, '/');
+	if (p) {
+		*p++ = 0;
+		unsigned bits = strtol(p, NULL, 10);
+		mask = htonl(((1ul << bits) - 1) << (32 - bits));
+	} else if (optind < argc) {
+		mask = inet_addr(argv[optind]);
+		++optind;
+	} else
+		usage(1);
+
+	if (set_ip(ifname, ip, mask, 0))
+		exit(1);
+
+	if (optind < argc) {
+		if (set_gateway(argv[optind]))
+			err(1, "set_gateway");
+	}
+
+	return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -841,53 +891,8 @@ int main(int argc, char *argv[])
 	if (optind < argc)
 		ifname = argv[optind++];
 
-	if (optind < argc) {
-		MUST_ARGS(W_SET | W_MAC | W_IFCAP, 1);
-
-#ifndef __linux__
-		if (strcmp(argv[optind], "create") == 0) {
-			ifcreate(ifname);
-			optind++;
-		}
-
-		if (strcmp(argv[optind], "destroy") == 0) {
-			ifdestroy(ifname);
-			return 0;
-		}
-
-		if (what & W_IFCAP)
-			set_ifcap(ifname, ifcap);
-#endif
-
-		char *ip = argv[optind++];
-
-		if (what & W_MAC) {
-			set_hw_addr(ifname, ip);
-			return 0;
-		}
-
-		unsigned mask = 0;
-		char *p = strchr(ip, '/');
-		if (p) {
-			*p++ = 0;
-			unsigned bits = strtol(p, NULL, 10);
-			mask = htonl(((1ul << bits) - 1) << (32 - bits));
-		} else if (optind < argc) {
-			mask = inet_addr(argv[optind]);
-			++optind;
-		} else
-			usage(1);
-
-		if (set_ip(ifname, ip, mask, 0))
-			exit(1);
-		if (optind < argc) {
-			if (set_gateway(argv[optind])) {
-				perror("set_gateway");
-				exit(1);
-			}
-		}
-		return 0;
-	}
+	if (optind < argc)
+		return configure_interface(ifname, argc, argv, what, ifcap);
 
 #ifndef __linux__
 	if (what & W_IFCAP)
