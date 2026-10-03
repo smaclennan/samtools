@@ -47,6 +47,7 @@
 #define W_EXISTS   (1 << 12)
 #define W_TUNTAP   (1 << 13)
 #define W_NO_VIRT  (1 << 15)
+#define W_IFCAP    (1 << 16)
 
 #define VIRBR "virbr"
 
@@ -292,6 +293,35 @@ static void ifdestroy(char *ifname)
 
 	close(sock_fd);
 }
+
+static void set_ifcap(char *ifname, int value)
+{
+	int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock_fd < 0)
+		err(1, "Failed to open socket");
+
+	struct ifreq ifr = { 0 };
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+
+ 	if (ioctl(sock_fd, SIOCGIFCAP, (caddr_t)&ifr) < 0)
+ 		err(1, "SIOCGIFCAP)");
+
+	int flags = ifr.ifr_curcap;
+	if (value < 0) {
+		value = -value;
+		flags &= ~value;
+	} else
+		flags |= value;
+	flags &= ifr.ifr_reqcap;
+
+	/* Check for no change in capabilities. */
+	if (ifr.ifr_curcap == flags)
+		return;
+
+	ifr.ifr_reqcap = flags;
+	if (ioctl(sock_fd, SIOCSIFCAP, (caddr_t)&ifr) < 0)
+		err(1, "SIOCSIFCAP");
+}
 #endif
 
 #ifdef SIOCSIFLLADDR
@@ -532,16 +562,28 @@ static char *ip_flags(const char *ifname)
 	strlcpy(ifreq.ifr_name, ifname, IF_NAMESIZE);
 	if (ioctl(sock, SIOCGIFFLAGS, &ifreq)) {
 		close(sock);
-		return "Failed";
+		return "Failed IF";
 	}
 
-	int link_stat = link_status(sock, ifname, ifreq.ifr_flags);
+	int flags = ifreq.ifr_flags;
+	int link_stat = link_status(sock, ifname, flags);
+
+#ifndef __linux__
+	if (ioctl(sock, SIOCGIFCAP, &ifreq)) {
+		close(sock);
+		return "Failed IFCAP";
+	}
+#endif
 
 	close(sock);
 
-	sprintf(flagstr, "0x%04hx %s%s %s", ifreq.ifr_flags,
-			(ifreq.ifr_flags & IFF_UP) ? "UP" : "DOWN",
-			(ifreq.ifr_flags & IFF_RUNNING) ? ",RUNNING" : "",
+#ifdef __linux__
+	sprintf(flagstr, "0x%04hx %s%s %s", flags,
+#else
+	sprintf(flagstr, "0x%x 0x%04hx %s%s %s", ifreq.ifr_curcap, flags,
+#endif
+			(flags & IFF_UP) ? "UP" : "DOWN",
+			(flags & IFF_RUNNING) ? ",RUNNING" : "",
 			link_stat == -1 ? "unknown" :
 			link_stat == 1 ? "active" : "no carrier");
 
@@ -676,11 +718,12 @@ static int taptun(const char *dev)
 
 static void usage(int rc)
 {
-	fputs("usage: ipaddr [-abefgimsqM] [interface]\n"
 #ifdef __linux__
+	fputs("usage: ipaddr [-abefgimsqM] [interface]\n"
 		  "       ipaddr <interface> <ip> <mask> [gateway]\n"
 		  "       ipaddr <interface> <ip>/<bits> [gateway]\n"
 #else
+	fputs("usage: ipaddr [-abefgimsqM] [-F ifcap_flags] [interface]\n"
 		  "       ipaddr <interface> [create] <ip> <mask> [gateway]\n"
 		  "       ipaddr <interface> [create] <ip>/<bits> [gateway]\n"
 		  "       ipaddr <interface> destroy\n"
@@ -702,6 +745,9 @@ static void usage(int rc)
 		  "       -q quiet, return error code only\n"
 		  "       -D down interface\n"
 		  "       -C check interface exists\n"
+#ifndef __linux__
+		  "       -F set (>0) or clear (<0) ifcap\n"
+#endif
 		  "       -M display, or optionally set, hardware address (mac)\n"
 #ifdef __linux__
 		  "       -T create a TAP/TUN interface. Linux only.\n"
@@ -722,11 +768,11 @@ static void usage(int rc)
 
 int main(int argc, char *argv[])
 {
-	int c, rc = 0;
+	int c, ifcap = 0, rc = 0;
 	unsigned what = 0;
 	char *ifname = NULL;
 
-	while ((c = getopt(argc, argv, "abefgmishqCDSTMV")) != EOF)
+	while ((c = getopt(argc, argv, "abefgmishqCF:DSTMV")) != EOF)
 		switch (c) {
 		case 'e':
 			what |= W_ADDRESS | W_BITS | W_FLAGS | W_MAC;
@@ -763,16 +809,22 @@ int main(int argc, char *argv[])
 		case 'D':
 			what |= W_DOWN;
 			break;
+		case 'F':
+#ifdef __linux__
+			(void)ifcap;
+			errx(2, "Sorry, -F not supported.");
+#endif
+			what |= W_IFCAP;
+			ifcap = strtol(optarg, NULL, 0);
+			break;
 		case 'S':
 			what |= W_SET;
 			break;
 		case 'T':
-#ifdef __linux__
-			what |= W_TUNTAP;
-#else
-			puts("Sorry, -T is Linux only.");
-			exit(2);
+#ifndef __linux__
+			errx(2, "Sorry, -T not supported.");
 #endif
+			what |= W_TUNTAP;
 			break;
 		case 'M':
 			what |= W_MAC;
@@ -800,6 +852,9 @@ int main(int argc, char *argv[])
 			ifdestroy(ifname);
 			return 0;
 		}
+
+		if (what & W_IFCAP)
+			set_ifcap(ifname, ifcap);
 #endif
 
 		char *ip = argv[optind++];
@@ -831,6 +886,11 @@ int main(int argc, char *argv[])
 		}
 		return 0;
 	}
+
+#ifndef __linux__
+	if (what & W_IFCAP)
+		set_ifcap(ifname, ifcap);
+#endif
 
 	if (what & W_EXISTS) {
 		MUST_ARGS(W_EXISTS, 0);
